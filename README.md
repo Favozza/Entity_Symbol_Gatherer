@@ -1,11 +1,18 @@
 # civ_sym_dump
+A DFHack Lua script for **Dwarf Fortress** (v50.01 and newer) that exports civilization and entity symbols from the currently loaded world into a searchable HTML report.
 
-A DFHack Lua script for *Dwarf Fortress* (v50.01 and newer) that instantly harvests and dumps all Entity/Civilization symbols of your world into a clean text file, saving you hours of hunting around in Adventure Mode.
+The report also includes a world map, civilization locations, races, and the symbols associated with each entity.
 
 ## Features
-- Automatically extracts all civilization, entity, and religious symbols across your entire world.
-- Exports structured data directly into a readable text file.
-- Fast and automated compared to the tedious vanilla method of hunting for engraved armor and items in Adventure Mode.
+* Export civilization and entity symbols
+* Group entities by race and civilization
+* Display creature, plant, tree, item, and shape symbols
+* Generate an ascii world map
+* Mark civilization-controlled sites on the map
+* Search entities by name
+* Expand/collapse civilization sections
+* Include glyph information for each symbol
+* Automatically update the report when additional symbol data becomes available
 
 ## Requirements
 - *Dwarf Fortress* (v50.01 or later)
@@ -28,3 +35,10 @@ A DFHack Lua script for *Dwarf Fortress* (v50.01 and newer) that instantly harve
 
 ## Visual Guide
 ![Guide GIF](https://raw.githubusercontent.com/Favozza/civ_sym_dump/refs/heads/main/Assets/guide.gif)
+
+## Work in Progress
+The script is still in development. Some symbols will not appear, and some sites may not belong to the civilization indicated in the legend.
+
+## License
+See the repository license.
+
