@@ -1,4 +1,4 @@
-# civ_sym_dump
+# ent_sym_gat
 A DFHack Lua script for **Dwarf Fortress** (v50.01 and newer) that exports civilization and entity symbols from the currently loaded world into a searchable HTML report.
 
 The report also includes a world map, civilization locations, races, and the symbols associated with each entity.
