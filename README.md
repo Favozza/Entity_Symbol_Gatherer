@@ -40,7 +40,6 @@ And a list with all the sub-entities:
 6. Run the script in the DFHack console:
    ```text
    ent_sym_gat
-
 ## Visual Guide
 ![Guide GIF](https://raw.githubusercontent.com/Favozza/civ_sym_dump/refs/heads/main/Assets/guide.gif)
 
