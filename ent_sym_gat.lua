@@ -115,8 +115,6 @@ local function parse_glyph_lines(lines)
             if g_old then
                 glyph, usage = g_old:match('^%s*(.-)%s*$'), u_old
             else
-                -- ID, then any number of spaces, then the glyph, then a tab or spaces, then the usage.
-                -- A tab right after the spaces means the glyph is blank (e.g. 000): skip the row.
                 rest = rest:gsub('^ +', '')
                 if rest:sub(1, 1) ~= '\t' then
                     glyph = rest:match('^' .. utf8.charpattern)
@@ -125,13 +123,12 @@ local function parse_glyph_lines(lines)
             end
             if glyph and glyph ~= '' then
                 usage = usage:lower()
-                -- the comma/semicolon separated entries of the usage text, without notes and markers
                 local items, heads = {}, {}
                 for item in usage:gmatch('[^,;]+') do
                     item = item:gsub('%b()', ''):gsub('^[%s%p]+', ''):gsub('[%s%p]+$', '')
                     if item ~= '' then
                         items[item] = true
-                        heads[item:match('(%S+)$')] = true  -- last word, e.g. "dwarves" in "civilian dwarves"
+                        heads[item:match('(%S+)$')] = true
                     end
                 end
                 rows[#rows + 1] = { id = id, glyph = glyph, usage = usage, items = items, heads = heads }
@@ -144,11 +141,17 @@ end
 local function load_glyphs()
     local rows, numbered = parse_glyph_lines(GLYPH_TEXT:gmatch('[^\n]+'))
     if #rows > 0 then
-        print(('ent_sym_gat: loaded %d glyphs (%d numbered lines) from the table inside the script')
-            :format(#rows, numbered))
+        print(string.rep('-', 60))
+        print('  [SUCCESS] ent_sym_gat: Glyphs Loaded')
+        print(string.format('            • Total Glyphs : %d', #rows))
+        print(string.format('            • Numbered Lines: %d', numbered))
+        print(string.rep('-', 60))
         return rows
     end
-    print('ent_sym_gat: no glyph table pasted at the end of the script; the glyph column will be empty')
+    print(string.rep('-', 60))
+    print('  [WARNING] ent_sym_gat: No glyph table found at the end of script.')
+    print('            The glyph column will appear empty.')
+    print(string.rep('-', 60))
     return false
 end
 
@@ -163,11 +166,6 @@ local function key_variants(k)
     return v
 end
 
--- Picks the best row for a key, in this order:
---   1. a row that lists it as an entry of its own ("..., Raccoon, ..." beats "Giant raccoon, ...")
---   2. a row with an entry ending in it ("Civilian dwarves" for dwarf); the first row wins ties
---   3. a row that mentions it anywhere, the earliest mention first
--- Rows mentioning "military" only win if nothing else matches. Run with the argument "glyphdebug" to see every choice.
 local glyph_debug = false
 
 local function glyph_for(keys)
@@ -184,17 +182,17 @@ local function glyph_for(keys)
             for _, r in ipairs(glyph_rows) do
                 local score
                 for _, form in ipairs(forms) do
-                    if r.items[form] then score = 0 break end  -- an entry of its own: "..., Raccoon, ..."
+                    if r.items[form] then score = 0 break end
                 end
                 if not score then
                     for _, form in ipairs(forms) do
-                        if r.heads[form] then score = 1000 break end  -- last word of an entry: "Civilian dwarves"
+                        if r.heads[form] then score = 1000 break end
                     end
                 end
                 if not score then
                     for _, pat in ipairs(pats) do
                         local pos = r.usage:find(pat)
-                        if pos and (not score or 2000 + pos < score) then score = 2000 + pos end  -- mentioned anywhere
+                        if pos and (not score or 2000 + pos < score) then score = 2000 + pos end
                     end
                 end
                 if score then
@@ -216,7 +214,6 @@ local function glyph_for(keys)
     return '–'
 end
 
--- name of the entity's own race, e.g. "Dwarf"
 local function civ_race_name(ent)
     local cr = ent.race >= 0 and safe(df.creature_raw.find, ent.race)
     local nm = cr and cr.name[0]
@@ -233,13 +230,11 @@ local function loaded_signature()
     return table.concat(ids, ',')
 end
 
--- human-readable label for an entity's actual DF type
 local function entity_type_name(ent)
     local nm = safe(function() return df.historical_entity_type[ent.type] end)
     return nm or ('type#' .. tostring(ent.type))
 end
 
--- name of the civilization an entity is linked to, or "Independent"
 local function find_parent_civ_name(ent, civ_info)
     for _, link in ipairs(ent.entity_links) do
         local ci = civ_info[link.target]
@@ -247,6 +242,13 @@ local function find_parent_civ_name(ent, civ_info)
     end
     return "Independent"
 end
+
+-- ---------------------------------------------------------------------------
+-- Startup Banner Integration
+-- ---------------------------------------------------------------------------
+print(string.rep('=', 60))
+print('  [INFO] ent_sym_gat: Starting Civilization & Entity Symbol Parser')
+print(string.rep('=', 60))
 
 -- ---------------------------------------------------------------------------
 -- HTML output
@@ -1064,17 +1066,20 @@ local function dump()
 
     cache_save(cache_path, sig, cache)
 
-    local f = assert(io.open(path, 'w'))
+	local f = assert(io.open(path, 'w'))
     f:write(build_html(by_race, races, world, stats, civ_info), '\n')
     f:close()
-
-    print(('ent_sym_gat: %d entities decoded (%d from earlier sessions), %d not decodable, %d races. Saved to %s')
-        :format(stats.decoded, stats.cached, stats.missing, #races, path))
+    
+    print((
+        'Entities Decoded : %d (%d from earlier sessions)\n' ..
+        'Not Decodable    : %d\n' ..
+        'Total Races      : %d\n' ..
+        'Saved to         : %s'
+    ):format(stats.decoded, stats.cached, stats.missing, #races, path))
     if stats.missing > 0 then
         local ids = {}
         for id in pairs(stats.missing_chunks) do ids[#ids + 1] = tostring(id) end
         table.sort(ids)
-        print('Missing symbol chunk(s): ' .. table.concat(ids, ', '))
     end
     return stats.missing
 end
@@ -1468,7 +1473,6 @@ GLYPH_TEXT = [==[
 glyph_debug = ((({...})[1] or ''):lower() == 'glyphdebug')
 local missing = dump()
 if missing > 0 then
-    print('ent_sym_gat: watching for symbol chunks to load; the file updates automatically.')
     watch(loaded_signature())
 end
 
