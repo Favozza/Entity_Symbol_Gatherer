@@ -40,6 +40,10 @@ And a list with all the sub-entities:
 6. Run the script in the DFHack console:
    ```text
    ent_sym_gat
+7. Repeat the process with another civilization, preferably after choosing a differen race using
+   ```text
+   embark-anyone
+   
 ## Visual Guide
 ![Guide GIF](https://raw.githubusercontent.com/Favozza/civ_sym_dump/refs/heads/main/Assets/guide.gif)
 
