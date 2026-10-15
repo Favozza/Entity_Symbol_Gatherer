@@ -46,9 +46,16 @@ And a list with all the sub-entities:
 ## Visual Guide
 ![Guide GIF](https://raw.githubusercontent.com/Favozza/civ_sym_dump/refs/heads/main/Assets/guide.gif)
 
+## Feedback and Bug Reports
+Entity_Symbol_Gatherer is actively tested, but bugs may still exist.
+If you find an issue, have a suggestion, or want to provide constructive feedback, please open an issue in this repository.
+
 ## Work in Progress
 The script is still in development.
 
+## Open new branches
+Contact me to start working on your own branch of this tool
+
 ## License
-Distributed under the MIT License.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
