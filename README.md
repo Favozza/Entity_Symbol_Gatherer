@@ -1,7 +1,7 @@
 # Entity Symbol Gatherer
 A DFHack Lua script for **Dwarf Fortress** (v50.01 and newer) that exports civilization and entity symbols from the currently loaded world into a searchable HTML report.
 
-The report includes a map:
+The report includes a map (move the mouse over the symbols to open the tootip):
 ![output PNG](https://raw.githubusercontent.com/Favozza/Entity_Symbol_Gatherer/refs/heads/main/Assets/map.png)
 
 A Summary with all the civilizations and their symbols:
