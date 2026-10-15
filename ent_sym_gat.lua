@@ -63,9 +63,25 @@ local function describe(e)
     local t = tostring(e._type)
     local cnt = e.count and e.count > 1 and (' x' .. e.count) or ''
     local keys = {}
+    
     if t:find('creaturest') then
         local cr = df.creature_raw.find(e.race)
         local nm = cr and cr.name[0]
+        
+        -- Check if the creature name or raw token contains "were" (werebeast)
+        local is_werebeast = false
+        if cr and cr.creature_id and cr.creature_id:lower():find('were') then
+            is_werebeast = true
+        elseif nm and nm:lower():find('were') then
+            is_werebeast = true
+        end
+
+        if is_werebeast then
+            add_keys(keys, nm)
+            -- Return a custom description and force the glyph Ñ by including a unique key or handling it in glyph_for
+            return (nm or ('werebeast#' .. e.race)) .. cnt, { 'Ñ', 'werebeast', nm }
+        end
+
         add_keys(keys, nm)
         return (nm or ('race#' .. e.race)) .. cnt, keys
     elseif t:find('treest') then
@@ -169,6 +185,12 @@ end
 local glyph_debug = false
 
 local function glyph_for(keys)
+    -- Check if any of the keys indicate a werebeast
+    for _, k in ipairs(keys) do
+        if type(k) == 'string' and (k:find('were') or k == 'Ñ') then
+            return 'Ñ'
+        end
+    end
     if not glyph_rows then return '' end
     for _, k in ipairs(keys) do
         local hit = glyph_cache[k]
@@ -647,7 +669,7 @@ local function build_map_html(civ_info, occupier)
         for _, r in ipairs(race_names) do  -- other races present on this map
             if not RACE_SHAPE[r] then items[#items + 1] = { race_shape[r], r } end
         end
-        add('<div class="racelegend"><span class="rl">Absent Glyph:</span>')
+        add('<div class="racelegend"><span class="rl">Symbol for Civilizations with absent Glyph:</span>')
         for _, it in ipairs(items) do
             add(('<span><b>%s</b>%s</span>'):format(html_plain(it[1]), html_plain(it[2])))
         end
@@ -1200,7 +1222,7 @@ GLYPH_TEXT = [==[
 092 \	helves
 093 ]	
 094 ^	Trap, Alabaster, Aluminum, Volcano
-095 _	
+095 _	catapultparts, ballistaparts
 096 `	
 097 a	
 098 b	
@@ -1270,7 +1292,7 @@ GLYPH_TEXT = [==[
 162 ó	Activated levers
 163 ú	
 164 ñ	Bogeyman
-165 Ñ	Night creatures
+165 Ñ	Night creatures, nightmare
 166 ª	dark pit ruins
 167 º	Cloth, dark pit
 168 ¿	Musical Instruments
@@ -1365,7 +1387,7 @@ GLYPH_TEXT = [==[
 011 ♂ Cuttlefish Nautilus, Squid
 015 ☼ Pond turtle
 016 ► manta ray
-037 % Floating guts
+037 % Floating guts, cheese
 042 * Creepy crawler
 064 @ Non-citizen dwarf in Fortress Mode, Adventurer in Adventure Mode
 065 A Alligator, Alligator man, Anaconda, Anaconda man, Giant aardvark, Giant adder, Giant albatross, Giant alligator, Giant anaconda, Giant anole, Giant armadillo, Giant axolotl, Giant aye-aye
