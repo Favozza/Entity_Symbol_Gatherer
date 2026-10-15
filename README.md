@@ -43,7 +43,6 @@ And a list with all the sub-entities:
 7. Repeat the process with another civilization, preferably after choosing a differen race using
    ```text
    embark-anyone
-   
 ## Visual Guide
 ![Guide GIF](https://raw.githubusercontent.com/Favozza/civ_sym_dump/refs/heads/main/Assets/guide.gif)
 
