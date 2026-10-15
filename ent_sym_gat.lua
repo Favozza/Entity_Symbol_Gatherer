@@ -1333,7 +1333,7 @@ GLYPH_TEXT = [==[
 225 ß	Leather
 226 Γ	Weight
 227 π	Cabinet, display cases
-228 Σ	TRAPPARTS
+228 Σ	TRAPPARTS, spike
 229 σ	Anvil, jugs
 230 µ	Crown
 231 τ	Tree sapling, pig tail, cave wheat, Longland grass, rat weed, hide root, muck root, blade weed, sliver barb, shrubland, arrow bamboo, golden bamboo, hedge bamboo
