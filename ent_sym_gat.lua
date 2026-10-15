@@ -157,15 +157,10 @@ end
 local function load_glyphs()
     local rows, numbered = parse_glyph_lines(GLYPH_TEXT:gmatch('[^\n]+'))
     if #rows > 0 then
-        print(string.rep('-', 60))
-        print('  [SUCCESS] ent_sym_gat: Glyphs Loaded')
-        print(string.format('            • Total Glyphs : %d', #rows))
-        print(string.format('            • Numbered Lines: %d', numbered))
-        print(string.rep('-', 60))
         return rows
     end
     print(string.rep('-', 60))
-    print('  [WARNING] ent_sym_gat: No glyph table found at the end of script.')
+    print('  [WARNING] Entity_Symbol_Gatherer: No glyph table found at the end of script.')
     print('            The glyph column will appear empty.')
     print(string.rep('-', 60))
     return false
@@ -269,7 +264,7 @@ end
 -- Startup Banner Integration
 -- ---------------------------------------------------------------------------
 print(string.rep('=', 60))
-print('  [INFO] ent_sym_gat: Starting Civilization & Entity Symbol Parser')
+print('  Entity Symbol Gatherer: Search and find all the symbols')
 print(string.rep('=', 60))
 
 -- ---------------------------------------------------------------------------
@@ -1093,11 +1088,10 @@ local function dump()
     f:close()
     
     print((
-        'Entities Decoded : %d (%d from earlier sessions)\n' ..
-        'Not Decodable    : %d\n' ..
-        'Total Races      : %d\n' ..
-        'Saved to         : %s'
-    ):format(stats.decoded, stats.cached, stats.missing, #races, path))
+        'Symbols Decoded : %d (%d from earlier sessions)\n' ..
+        'Not Decodable   : %d\n\n' ..
+        'Saved to %s'
+    ):format(stats.decoded, stats.cached, stats.missing, path))
     if stats.missing > 0 then
         local ids = {}
         for id in pairs(stats.missing_chunks) do ids[#ids + 1] = tostring(id) end
