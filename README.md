@@ -19,7 +19,7 @@ And a list with all the sub-entities:
 * Mark civilization-controlled sites on the map
 * Search entities by name
 * Expand/collapse civilization sections
-* Include glyph information for each symbol
+* Include the original DF glyph for each symbol
 * Automatically update the report when additional symbol data becomes available
 
 ## Requirements
@@ -50,8 +50,8 @@ And a list with all the sub-entities:
 Entity_Symbol_Gatherer is actively tested, but bugs may still exist.
 If you find an issue, have a suggestion, or want to provide constructive feedback, please open an issue in this repository.
 
-## Work in Progress
-The script is still in development.
+## Caveats
+For some reason the in-game map, some times, lists a group as a civilization. This tool solves that problem by not assigning the level of civilization to any group.
 
 ## Open new branches
 Contact me to start working on your own branch of this tool
