@@ -19,7 +19,7 @@ And a list with all the sub-entities:
 * Mark civilization-controlled sites on the map
 * Search entities by name
 * Expand/collapse civilization sections
-* Include the original DF glyph for each symbol
+* The original DF glyphs for each symbol
 * Automatically update the report when additional symbol data becomes available
 
 ## Requirements
