@@ -1,8 +1,10 @@
--- ent_sym_gat: dump all civilization and entity symbols of the loaded world to a civ_symbols_<worldname>.html file in the DF folder
+-- ent_sym_gat: gather all civilization and entity symbols of the loaded world to a civ_symbols_<worldname>.html file in the DF folder
 -- Usage: Embark -> Smooth stone wall/floor -> Detail -> Specify image -> Existing image -> Click on DFHack -> ent_sym_gat
 
 -- Glyph table: paste it at the END of this file (search for "PASTE GLYPH TABLE").
 local GLYPH_TEXT = ''
+
+local TAG = 'ent_sym_gat'  -- prefix of the console messages
 
 local function safe(f, ...)
     local ok, r = pcall(f, ...)
@@ -275,11 +277,11 @@ local CSS = [[
 :root{
   --bg:#000;--ink:#fff;--muted:#a9a9a9;--line:#303030;--hover:#0f0f0f;
   --accent:#fff;--warn:#f0b040;
-  --font:"DejaVu Sans Mono",Consolas,ui-monospace,SFMono-Regular,monospace;
+  --font:"DejaVu Sans Mono",Consolas,"Segoe UI Symbol",ui-monospace,SFMono-Regular,monospace;
 }
 *{box-sizing:border-box}
 html{scroll-padding-top:4.5rem;color-scheme:dark}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--font)}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--font);font-variant-emoji:text}
 header.top{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);
   padding:.7rem 1.25rem;display:flex;flex-wrap:wrap;gap:.75rem 1.5rem;align-items:center}
 header.top h1{font-size:1rem;margin:0;font-weight:700;color:var(--accent)}
@@ -374,6 +376,8 @@ local JS = [[
   var races=[].slice.call(document.querySelectorAll('section.race'));
   var groups=[].slice.call(document.querySelectorAll('.typegroup'));
   function filter(){
+    // Keep the page at the same vertical position while results are updated.
+    var savedScrollY=window.scrollY;
     var s=q.value.trim().toLowerCase();
     entries.forEach(function(li){
       var hide=(s&&li.textContent.toLowerCase().indexOf(s)<0)||(only&&li.classList.contains('missing'));
@@ -395,7 +399,27 @@ local JS = [[
     races.forEach(function(r){
       r.classList.toggle('hidden', (s||only)&&!r.querySelector('details.civ:not(.hidden)'));
     });
+    // Restore after the browser has recalculated the layout.
+    window.requestAnimationFrame(function(){
+      window.scrollTo(window.scrollX,savedScrollY);
+    });
   }
+  // Keep keyboard navigation inside the search field from scrolling the page.
+  q.addEventListener('keydown',function(e){
+    if(e.key==='ArrowUp'||e.key==='ArrowDown'){
+      e.preventDefault();
+      return;
+    }
+    if(e.key==='Backspace'||e.key==='Delete'){
+      var y=window.scrollY;
+      requestAnimationFrame(function(){
+        window.scrollTo({left:window.scrollX,top:y,behavior:'instant'});
+        requestAnimationFrame(function(){
+          window.scrollTo({left:window.scrollX,top:y,behavior:'instant'});
+        });
+      });
+    }
+  });
   q.addEventListener('input',filter);
   btn.onclick=function(){
     only=!only;
@@ -422,8 +446,8 @@ local TERRAIN = {
     glacier       = { "#", "#FFFFFF", "Glacier" },
     wetland       = { '"', "#CC33CC", "Wetland" },
     mountains     = { "^", "#CCCCCC", "Mountains" },
-    ocean         = { "~", "#3366FF", "Ocean" },
-    lake          = { "-", "#00E5FF", "Lake" },
+    ocean         = { "~", "#010a73", "Ocean" },
+    lake          = { "~", "#018785", "Lake" },
     default       = { "≡", "#999999", "Other Land" },
     mountain_peak = { "▲", "#FFFFFF", "Mountain Peak" },
     volcano       = { "▲", "#FF3333", "Volcano" },
@@ -439,14 +463,173 @@ local function html_plain(s)
     return (tostring(s):gsub('[&<>"\']', ESC))
 end
 
+-- Browsers may draw characters such as the smiley as colour emoji. Appending U+FE0E (the "text
+-- presentation" selector) after every non-ASCII glyph asks for the plain text drawing instead.
+local function text_glyph(g)
+    local out = tostring(g):gsub('[\xC2-\xF4][\x80-\xBF]*', '%0\u{FE0E}')
+    return (out:gsub('–\u{FE0E}', '–'))  -- the "no glyph" dash needs no selector
+end
+
+-- a glyph (or list of glyphs) ready for the html
+local function glyph_html(g) return html_plain(text_glyph(g)) end
+
 -- site types that get the "@" marker when they are not owned by a civ of the list
--- (compared without case, spaces or underscores)
+-- (compared without case, spaces or underscores). Run `ent_sym_gat sitetypes` to see the real type names of
+-- your world and add a missing one here.
 local FALLEN_TYPES = {
     town = true, hamlet = true, mountainhalls = true, hillocks = true,
     forestretreat = true, darkfortress = true, darkpits = true,
+    monastery = true, tomb = true, tower = true, fort = true, castle = true,
+    -- in this game forts, castles, towers, tombs and monasteries are stored under these two general names
+    fortress = true, monument = true,
 }
 local function is_settlement(type_name)
     return FALLEN_TYPES[(tostring(type_name):lower():gsub('[^%a]', ''))] or false
+end
+
+-- These general types hold several kinds of site (monastery / castle / fort, tomb / tower / lair, ...) that the
+-- data does not tell apart, so they are simply called "Other" and drawn with "%" when no civilization owns them.
+local OTHER_TYPES = { fortress = true, monument = true }
+-- Other sites: white when they have no government, light gray when they do.
+local OTHER_NO_GOV_COLOR = '#fff'
+local OTHER_GOV_COLOR = '#858585'
+-- ... except a "Fortress" that a civilization built and still holds (its founder is its owner): a castle.
+-- One that a civilization conquered from someone else stays "Other", since it could be any kind.
+local CIV_KIND = { fortress = 'Castle' }
+
+-- Sites of the four civilization types are named after the race (a town stays a town even when war has
+-- halved it, so there is no big/small split).
+local SITE_KIND = {
+    mountainhalls = 'Dwarf Settlement',
+    town          = 'Human Settlement',
+    darkfortress  = 'Goblin Settlement',
+    forestretreat = 'Forest Retreat',
+}
+local function is_other(type_name)
+    return OTHER_TYPES[(tostring(type_name):lower():gsub('[^%a]', ''))] or false
+end
+
+-- DF strings are CP437; glyphs (from the pasted table) are already UTF-8, so convert piece by piece
+local function dfu(s) return safe(dfhack.df2utf, s) or s end
+
+-- `ent_sym_gat sitetypes`: the internal type name of every kind of site in this world, with counts and a few
+-- examples, and whether such a site gets a "@" / "?" marker when no civilization owns it
+local function site_types_report()
+    local by_type, order = {}, {}
+    for _, s in ipairs(df.global.world.world_data.sites) do
+        local tn = safe(function() return df.world_site_type[s.type] end) or ('type#' .. tostring(s.type))
+        local rec = by_type[tn]
+        if not rec then
+            rec = { n = 0, owned = 0, examples = {} }
+            by_type[tn] = rec
+            order[#order + 1] = tn
+        end
+        rec.n = rec.n + 1
+        if s.cur_owner_id and s.cur_owner_id >= 0 then rec.owned = rec.owned + 1 end
+        if #rec.examples < 3 then
+            local nm = safe(dfhack.translation.translateName, s.name, true) or '?'
+            rec.examples[#rec.examples + 1] = ('%s (%d,%d)'):format(dfu(nm), s.pos.x, s.pos.y)
+        end
+    end
+    table.sort(order)
+    print(TAG .. ': site types in this world (type name, sites, with an owner, marker when unowned, examples)')
+    for _, tn in ipairs(order) do
+        local rec = by_type[tn]
+        print(('  %-18s %4d %4d  %-10s %s'):format(tn, rec.n, rec.owned,
+            is_settlement(tn) and '@ / ?' or 'not drawn', table.concat(rec.examples, ', ')))
+    end
+end
+-- the tooltip lines of one site on the map
+local function site_tooltip(s, civ_info)
+    local norm = (tostring(s.type):lower():gsub('[^%a]', ''))
+    local kind
+    if is_other(s.type) then
+        kind = (s.civ and s.civ == s.founder and CIV_KIND[norm]) or 'Other'
+    elseif SITE_KIND[norm] then
+        kind = SITE_KIND[norm]
+    else
+        kind = (s.type:gsub('(%l)(%u)', '%1 %2'))  -- "MountainHalls" -> "Mountain Halls"
+    end
+    local site_line = ('SITE: %s (%s)'):format(dfu(s.name), kind)
+    
+    local race_line, civ_line, symbol_line, symbol_name_line, fallback_line
+    
+    if s.civ then
+        local ci = civ_info[s.civ]
+        if ci then
+            race_line = 'RACE: ' .. ci.race
+            civ_line = 'CIV: ' .. dfu(ci.name)
+            if ci.symbol then
+                local glyphs = {}
+                for g in tostring(ci.glyphs or ''):gmatch('%S+') do
+                    if g ~= '–' then glyphs[#glyphs + 1] = g end
+                end
+                symbol_line = 'SYMBOL: ' .. dfu(ci.symbol)
+                    .. (#glyphs > 0 and (' (' .. text_glyph(table.concat(glyphs, ' ')) .. ')') or '')
+                if ci.symbol_name then
+                    symbol_name_line = 'SYMBOL NAME: ' .. dfu(ci.symbol_name)
+                end
+            else
+                symbol_line = 'Symbol: not decoded'
+            end
+        end
+    else
+        -- "other" kinds of site: GOVERNMENT / NO GOVERNMENT; regular sites: NEW GOV / RUIN
+        local other = is_other(s.type)
+        if s.owner then
+            fallback_line = (other and 'GOVERNMENT: ' or 'NEW GOV: ') .. dfu(s.owner)
+        else
+            fallback_line = other and 'NO GOVERNMENT' or 'RUIN'
+        end
+    end
+    
+    local lines = {}
+    if race_line then lines[#lines + 1] = race_line end
+    if civ_line then lines[#lines + 1] = civ_line end
+    lines[#lines + 1] = site_line
+    if symbol_line then lines[#lines + 1] = symbol_line end
+    if symbol_name_line then lines[#lines + 1] = symbol_name_line end
+    if fallback_line then lines[#lines + 1] = fallback_line end
+    
+    return table.concat(lines, '\n')
+end
+
+-- `ent_sym_gat sitekinds`: the general types "Fortress", "Monument" and "LairShrine" each hold several kinds of site
+-- (castle / monastery, tomb / lair, ...). This groups their sites by owner type and by the buildings they contain,
+-- which is what can tell the kinds apart, with a few examples to look up in Legends.
+local function site_kinds_report()
+    local groups, order = {}, {}
+    for _, s in ipairs(df.global.world.world_data.sites) do
+        local tn = safe(function() return df.world_site_type[s.type] end) or '?'
+        if tn == 'Fortress' or tn == 'Monument' or tn == 'LairShrine' then
+            local owner = s.cur_owner_id and s.cur_owner_id >= 0 and safe(df.historical_entity.find, s.cur_owner_id)
+            local otype = owner and (safe(function() return df.historical_entity_type[owner.type] end) or '?') or 'none'
+            local names, seen = {}, {}
+            for _, b in ipairs(safe(function() return s.buildings end) or {}) do
+                local cn = (tostring(safe(function() return b._type end) or '?'):gsub('^.*abstract_building_', ''))
+                if not seen[cn] then seen[cn] = true; names[#names + 1] = cn end
+            end
+            table.sort(names)
+            local key = ('%s | owner: %s | buildings: %s'):format(
+                tn, otype, #names > 0 and table.concat(names, ', ') or 'none')
+            local g = groups[key]
+            if not g then
+                g = { n = 0, examples = {} }
+                groups[key] = g
+                order[#order + 1] = key
+            end
+            g.n = g.n + 1
+            if #g.examples < 3 then
+                local nm = safe(dfhack.translation.translateName, s.name, true) or '?'
+                g.examples[#g.examples + 1] = ('%s (%d,%d)'):format(dfu(nm), s.pos.x, s.pos.y)
+            end
+        end
+    end
+    table.sort(order)
+    print(TAG .. ': kinds of Fortress / Monument / LairShrine sites (group, sites, examples)')
+    for _, key in ipairs(order) do
+        print(('  %s  =>  %d sites, e.g. %s'):format(key, groups[key].n, table.concat(groups[key].examples, ', ')))
+    end
 end
 
 -- civ_info: [entity id] = { name = ..., symbol = ... (may be nil) }
@@ -517,7 +700,7 @@ local function build_map_html(civ_info, occupier)
             end
             local key = s.pos.x .. ',' .. s.pos.y
             sites_at[key] = sites_at[key] or {}
-            table.insert(sites_at[key], { civ = civ, name = sname, type = stype, owner = owner })
+            table.insert(sites_at[key], { civ = civ, name = sname, type = stype, owner = owner, founder = s.civ_id })
         end
     end
 
@@ -545,12 +728,12 @@ local function build_map_html(civ_info, occupier)
     -- yellow, orange, green and gray only once those run out
     local PREFERRED = {
         'hsl(0,85%,58%)',    -- red
-        'hsl(205,90%,60%)',  -- azure
+        'hsl(57,100%,50%)',  -- yellow
         'hsl(310,85%,62%)',  -- magenta
         'hsl(180,85%,52%)',  -- cyan
-        'hsl(265,85%,72%)',  -- violet
         'hsl(340,90%,72%)',  -- pink
-        'hsl(235,75%,66%)',  -- indigo
+        'hsl(265,85%,72%)',  -- violet
+        'hsl(234,100%,65%)',   -- blue
     }
     local LAST_RESORT = {
         'hsl(58,95%,58%)',   -- yellow
@@ -605,23 +788,25 @@ local function build_map_html(civ_info, occupier)
             local st = sites_at[x .. ',' .. y]
             if st then
                 emit()
-                local lines, owned, marker = {}, nil, '@'  -- @ = ruin, ? = fallen to a government without civ
+                -- @ = ruin, ? = fallen to a government without civ, % = "other" kinds of site (monastery, castle, tomb...)
+                local blocks, owned, marker, marker_color = {}, nil, '@', '#fff'
                 for _, s in ipairs(st) do
+                    blocks[#blocks + 1] = site_tooltip(s, civ_info)
                     if s.civ then
-                        local ci = civ_info[s.civ]
-                        lines[#lines + 1] = ('%s (%s) - %s%s'):format(s.name, s.type, ci.name,
-                            ci.symbol and (' - symbol: ' .. ci.symbol) or '')
                         owned = owned or s
-                    else
-                        lines[#lines + 1] = ('%s (%s) - %s'):format(
-                            s.name, s.type, s.owner and ('Fallen to ' .. s.owner) or 'Ruin')
-                        if s.owner then marker = '?' end
+                    elseif is_other(s.type) then
+                        marker = '%'
+                        -- Other sites are white with no government, light gray with a government.
+                        if s.owner then marker_color = OTHER_GOV_COLOR else marker_color = OTHER_NO_GOV_COLOR end
+                    elseif s.owner and marker ~= '%' then
+                        marker = '?'
                     end
                 end
-                local title = table.concat(lines, '\n')
+                -- a native tooltip shows line breaks written as &#10;; sites on the same tile are separated by a blank line
+                local title = html_plain(table.concat(blocks, '\n\n')):gsub('\n', '&#10;')
                 out[#out + 1] = ('<i style="color:%s" title="%s">%s</i>'):format(
-                    owned and civ_color[owned.civ] or '#fff', html_plain(safe(dfhack.df2utf, title) or title),
-                    owned and html_plain(civ_shape[owned.civ]) or marker)
+                    owned and civ_color[owned.civ] or marker_color, title,
+                    owned and glyph_html(civ_shape[owned.civ]) or marker)
             elseif peak ~= nil then
                 emit()
                 local key = peak and 'volcano' or 'mountain_peak'
@@ -664,14 +849,16 @@ local function build_map_html(civ_info, occupier)
         for _, r in ipairs(race_names) do  -- other races present on this map
             if not RACE_SHAPE[r] then items[#items + 1] = { race_shape[r], r } end
         end
-        add('<div class="racelegend"><span class="rl">Symbol for Civilizations with absent Glyph:</span>')
+        add('<div class="racelegend"><span class="rl">Symbols for Civilizations with absent Glyph:</span>')
         for _, it in ipairs(items) do
             add(('<span><b>%s</b>%s</span>'):format(html_plain(it[1]), html_plain(it[2])))
         end
         add('</div>')
     end
     add('<div class="racelegend"><span><b>@</b>Ruin</span>'
-        .. '<span><b>?</b>Fallen to a government without a civilization</span></div>')
+        .. '<span><b>?</b>Site fallen to a government without a civilization</span>'
+        .. '<span><b style="color:' .. OTHER_NO_GOV_COLOR .. '">%</b>Others — no government</span>'
+        .. '<span><b style="color:' .. OTHER_GOV_COLOR .. '">%</b>Others — government</span></div>')
     if #civ_ids > 0 then
         add('<div class="civlegend">')
         for _, race in ipairs(race_names) do
@@ -684,7 +871,7 @@ local function build_map_html(civ_info, occupier)
                     html_plain(safe(dfhack.df2utf, ci.symbol or 'no symbol') or ci.symbol or 'no symbol'),
                     civ_sites[id], civ_sites[id] == 1 and '' or 's')
                 add(('<div><span class="sw" style="color:%s">%s</span><span class="cn">%s</span></div>')
-                    :format(civ_color[id], html_plain(civ_shape[id]), txt))
+                    :format(civ_color[id], glyph_html(civ_shape[id]), txt))
             end
         end
         add('</div>')
@@ -699,7 +886,7 @@ local function entry_html(en, with_site)
     local site = with_site and ('<span class="site">%s</span>'):format(esc(en.site or '-')) or ''
     return ('<li class="%s">%s<span class="name">%s</span><span class="sym">%s</span><span class="gl">%s</span>'
         .. '<span class="sn">%s</span></li>')
-        :format(cls, site, esc(en.name), esc(en.symbol), html_plain(en.glyphs or ''), esc(en.symbol_name or ''))
+        :format(cls, site, esc(en.name), esc(en.symbol), glyph_html(en.glyphs or ''), esc(en.symbol_name or ''))
 end
 
 local function slug(s)
@@ -750,8 +937,8 @@ local function build_html(by_race, races, world, stats, civ_info)
     add('<p>In Dwarf Fortress, intelligent creatures can form organized groups called '
         .. 'Entities. These include civilizations, site governments, religions, guilds, '
         .. 'nomadic groups, and more. Each Entity is procedurally assigned a name '
-        .. '(e.g. "The Fair Kingdom"), a symbol (e.g. a coin), a symbol name '
-        .. '(e.g. "The Strong Flower"), and a glyph (e.g. "$").</p>')
+        .. '(e.g. "The Fair Kingdom"), a symbol (e.g. a coin), the relative ascii glyph (e.g. "$") '
+        .. 'and a symbol name (e.g. "The Strong Flower").</p>')
 
     if stats.missing > 0 then
         add(('<p><strong>Some symbols could not be decoded.</strong> '
@@ -825,7 +1012,7 @@ local function build_html(by_race, races, world, stats, civ_info)
                     add(('<span class="sym%s">%s</span>')
                         :format(g.civ.missing and ' missing' or '', esc(g.civ.symbol)))
                     if g.civ.glyphs and g.civ.glyphs ~= '' then
-                        add(('<span class="gl">%s</span>'):format(html_plain(g.civ.glyphs)))
+                        add(('<span class="gl">%s</span>'):format(glyph_html(g.civ.glyphs)))
                     end
                     if g.civ.symbol_name then
                         add(('<span class="sn">%s</span>'):format(esc(g.civ.symbol_name)))
@@ -947,12 +1134,33 @@ local function render_symbol(elems)
     return table.concat(parts, ' + '), table.concat(glyphs, ' ')
 end
 
+-- the symbol's own (procedural) name, e.g. "The Strong Flower": art_image.name if it exists, otherwise
+-- the first field of the image that holds a language_name
+local function symbol_name_of(img)
+    local function try(v)
+        if v ~= nil and safe(function() return v.has_name end) then
+            local nm = safe(dfhack.translation.translateName, v, true)
+            if nm and nm ~= '' then return nm end
+        end
+    end
+    local nm = try(safe(function() return img.name end))
+    if nm then return nm end
+    for _, v in pairs(img) do
+        if type(v) == 'userdata' or type(v) == 'table' then
+            nm = try(v)
+            if nm then return nm end
+        end
+    end
+end
+ 
+local names_warned = false
+ 
 -- writes the file, returns number of entities that could not be decoded
 local function dump()
     if glyph_rows == nil then glyph_rows = load_glyphs() end
     local by_race = {}
     local stats = { decoded = 0, missing = 0, cached = 0, civs = 0, missing_chunks = {} }
-
+ 
     -- one file per world so results never mix
     local world = safe(dfhack.world.ReadWorldFolder)
         or safe(function() return dfhack.translation.translateName(df.global.world.world_data.name, true) end)
@@ -966,7 +1174,8 @@ local function dump()
         safe(dfhack.translation.translateName, wd.name, true) or '?',
         safe(dfhack.translation.translateName, wd.name, false) or '?', wd.world_width, wd.world_height))
     local cache = cache_load(cache_path, sig)
-
+    local fresh, names_found, sample_img = 0, 0, nil  -- for the "no symbol names" warning
+ 
     -- all named civilizations by entity id (symbol/glyphs are filled in below)
     local civ_info = {}
     for _, ent in ipairs(df.global.world.entities.all) do
@@ -974,7 +1183,7 @@ local function dump()
             civ_info[ent.id] = { name = dfhack.translation.translateName(ent.name, true), race = civ_race_name(ent) }
         end
     end
-
+ 
     -- Some sites have no cur_owner_id although a government rules them. That government is only stored on its
     -- own side, as a site link whose flags contain "residence" (former governments have it as former_flag).
     -- site id -> that government (only if unique)
@@ -994,7 +1203,7 @@ local function dump()
     end
     for id in pairs(ambiguous) do occupier[id] = nil end
     stats.occupier = occupier
-
+ 
     -- the site each site government belongs to: the site it currently owns (or occupies)
     local site_of = {}
     for _, site in ipairs(df.global.world.world_data.sites) do
@@ -1012,17 +1221,17 @@ local function dump()
             local cname = dfhack.translation.translateName(ent.name, true)
             local race = civ_race_name(ent)
             local tname = entity_type_name(ent)
-
+ 
             -- governments that rule no site are left out of the list
             local site = tname == 'SiteGovernment' and site_of[ent.id] or nil
             if tname == 'SiteGovernment' and not site then goto next_entity end
-
+ 
             local id = ent.resources.art_image_ids[0]
             local sub = ent.resources.art_image_subids[0]
             local img = find_image(id, sub)
             local en = { name = cname, id = ent.id }
             en.site = site
-
+ 
             -- the symbol: decoded now, or taken from the results saved by an earlier session
             local rec
             if img then
@@ -1031,8 +1240,11 @@ local function dump()
                     local txt, keys = describe(e)
                     elems[#elems + 1] = { text = txt, keys = keys }
                 end
-                local nm = safe(function() return dfhack.translation.translateName(img.name, true) end)
-                rec = { chunk = id, sub = sub, name = (nm and nm ~= '') and nm or nil, elems = elems }
+                local nm = symbol_name_of(img)
+                fresh = fresh + 1
+                sample_img = sample_img or img
+                if nm then names_found = names_found + 1 end
+                rec = { chunk = id, sub = sub, name = nm, elems = elems }
                 cache[ent.id] = rec
             else
                 local old = cache[ent.id]
@@ -1051,21 +1263,22 @@ local function dump()
                 en.missing = true
                 en.symbol = ('(symbol chunk %d not loaded)'):format(id)
             end
-
+ 
             by_race[race] = by_race[race] or {}
             local race_group = by_race[race]
-
+ 
             -- grouping key: the civ itself, its parent civ, or "Independent"
             local is_civ = ent.type == df.historical_entity_type.Civilization
             local group_key = is_civ and cname or find_parent_civ_name(ent, civ_info)
-
+ 
             race_group[group_key] = race_group[group_key] or { types = {} }
             local bucket = race_group[group_key]
-
+ 
             if is_civ then
                 bucket.civ = en
                 stats.civs = stats.civs + 1
                 if rec then
+                    civ_info[ent.id].symbol_name = rec.name
                     civ_info[ent.id].symbol = en.symbol
                     civ_info[ent.id].glyphs = en.glyphs
                 end
@@ -1076,39 +1289,53 @@ local function dump()
         end
         ::next_entity::
     end
-
+ 
     local races = {}
     for race in pairs(by_race) do races[#races + 1] = race end
     table.sort(races)
-
+ 
     cache_save(cache_path, sig, cache)
-
-	local f = assert(io.open(path, 'w'))
+ 
+    if fresh > 0 and names_found == 0 and not names_warned then
+        names_warned = true
+        local fields = {}
+        for k, v in pairs(sample_img) do
+            local t = type(v)
+            fields[#fields + 1] = (t == 'number' or t == 'boolean') and ('%s=%s'):format(k, tostring(v)) or tostring(k)
+        end
+        table.sort(fields)
+        print(('%s: no symbol names found. Fields of a symbol image: %s'):format(TAG, table.concat(fields, ', ')))
+    end
+ 
+    local f = assert(io.open(path, 'w'))
     f:write(build_html(by_race, races, world, stats, civ_info), '\n')
     f:close()
-    
-    print((
-        'Symbols Decoded : %d (%d from earlier sessions)\n' ..
-        'Not Decodable   : %d\n\n' ..
-        'Saved to %s'
-    ):format(stats.decoded, stats.cached, stats.missing, path))
+ 
+    -- two short lines: what was decoded, and where the file is (without the long path in front of the DF folder)
+    local line = ('%s: %d symbols, %d races: '):format(TAG, stats.decoded + stats.missing, #races)
+    line = line .. (stats.missing == 0 and 'all decoded' or (stats.decoded .. ' decoded'))
+    if stats.cached > 0 then line = line .. (' (%d from earlier sessions)'):format(stats.cached) end
     if stats.missing > 0 then
         local ids = {}
-        for id in pairs(stats.missing_chunks) do ids[#ids + 1] = tostring(id) end
+        for id in pairs(stats.missing_chunks) do ids[#ids + 1] = id end
         table.sort(ids)
+        line = line .. (', %d not decodable (%s %s not loaded)'):format(
+            stats.missing, #ids == 1 and 'chunk' or 'chunks', table.concat(ids, ', '))
     end
+    print(line)
+    print(('%s: saved to %s'):format(TAG, path:match('([^/\\]+[/\\][^/\\]+)$') or path))
     return stats.missing
 end
-
+ 
 -- poll about once a second (in frames, so it also runs in menus)
 local function watch(last_sig)
     dfhack.timeout(60, 'frames', function()
         if not dfhack.isWorldLoaded() then return end
         local sig = loaded_signature()
         if sig ~= last_sig then
-            print('ent_sym_gat: new symbol data loaded, updating file...')
+            print(TAG .. ': new symbol data loaded, updating...')
             if dump() == 0 then
-                print('ent_sym_gat: all symbols decoded, done watching.')
+                print(TAG .. ': all symbols decoded, done watching.')
                 return
             end
         end
@@ -1213,7 +1440,7 @@ GLYPH_TEXT = [==[
 089 Y	Yak, Yeti
 090 Z	Sleep indicator
 091 [	Floor tile in workshops, Helm, Cap, Hood, Crown, Turban, Mail Shirt, Breastplate, Leather Armor, Dress, Robe, Tunic, Vest, Shirt, Cloak, Coat, Cape, Toga, Dress, Apron, Thong, Loincloth, Skirt, Trousers, Leggings, Greaves, Chausses, High Boots, Low Boots, Shoes, Sandals, Socks, Gauntlets, Mittens, Gloves, Shield, Buckler, SKIN_TANNED
-092 \	helves
+092 \	helves, branch
 093 ]	
 094 ^	Trap, Alabaster, Aluminum, Volcano
 095 _	catapultparts, ballistaparts
@@ -1486,7 +1713,17 @@ GLYPH_TEXT = [==[
 ]==]
 -- ===========================================================================
 
-glyph_debug = ((({...})[1] or ''):lower() == 'glyphdebug')
+local option = ((({...})[1] or ''):lower())
+if option == 'sitetypes' then
+    site_types_report()
+    return
+end
+if option == 'sitekinds' then
+    site_kinds_report()
+    return
+end
+
+glyph_debug = (option == 'glyphdebug')
 local missing = dump()
 if missing > 0 then
     watch(loaded_signature())
